@@ -12,6 +12,9 @@ import {
 } from "react-bootstrap";
 import { SERVER_URL } from "../../../../api/api";
 import { extractAuth0UserID } from "../../../../utils/utils";
+import web3 from "web3";
+import getWeb3 from "../../../../getWeb3";
+import ApeSurveyContract from "../../../../contracts/ApeSurveyContract.json";
 
 export default function FundSurvey(props) {
   const { user } = useAuth0();
@@ -21,9 +24,40 @@ export default function FundSurvey(props) {
   const [rewardPoolAmount, setRewardPoolAmount] = useState(0);
   const [rewardAmount, setRewardAmount] = useState(0);
   const [userToken] = useState(props.token);
+  const [web3, setWeb3] = useState(null);
+  const [contract, setContract] = useState(null);
+  const [accounts, setAccounts] = useState(null);
+
+  const connectWalletHandler = async () => {
+    try {
+      // Get network provider and web3 instance.
+      const web3 = await getWeb3();
+
+      // Use web3 to get the user's accounts.
+      const accounts = await web3.eth.getAccounts();
+
+      // Get the contract instance.
+      const networkId = await web3.eth.net.getId();
+      const deployedNetwork = ApeSurveyContract.networks[networkId];
+      const instance = new web3.eth.Contract(
+        ApeSurveyContract.abi,
+        deployedNetwork && deployedNetwork.address
+      );
+
+      // Set web3, accounts, and contract to the state, and then proceed with an
+      // example of interacting with the contract's methods.
+      this.setState({ web3, accounts, contract: instance }, this.runExample);
+    } catch (error) {
+      // Catch any errors for any of the above operations.
+      alert(
+        `Failed to load web3, accounts, or contract. Check console for details.`
+      );
+      console.error(error);
+    }
+  };
 
   useEffect(() => {
-    // get user surveys
+    // get user SM surveys
     fetch(SERVER_URL + "/user/" + extractAuth0UserID(user.sub) + "/surveys", {
       method: "GET",
       headers: {
@@ -195,10 +229,13 @@ export default function FundSurvey(props) {
         </Row>
 
         {/* If the user has connected their wallet then show the rest of the form, else show connect wallet button */}
-        <Button variant="warning" size="lg">
-          Connect Wallet
-        </Button>
-        <Button variant="warning">Fund Survey</Button>
+        {web3 && accounts ? (
+          <Button variant="warning">Fund Survey</Button>
+        ) : (
+          <Button variant="warning" size="lg" onClick={connectWalletHandler}>
+            Connect Wallet
+          </Button>
+        )}
       </Form>
     </div>
   );
