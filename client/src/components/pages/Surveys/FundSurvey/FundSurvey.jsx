@@ -12,7 +12,6 @@ import {
 } from "react-bootstrap";
 import { SERVER_URL } from "../../../../api/api";
 import { extractAuth0UserID } from "../../../../utils/utils";
-import web3 from "web3";
 import getWeb3 from "../../../../getWeb3";
 import ApeSurveyContract from "../../../../contracts/ApeSurveyContract.json";
 
@@ -31,22 +30,24 @@ export default function FundSurvey(props) {
   const connectWalletHandler = async () => {
     try {
       // Get network provider and web3 instance.
-      const web3 = await getWeb3();
+      const web3Instance = await getWeb3();
 
       // Use web3 to get the user's accounts.
-      const accounts = await web3.eth.getAccounts();
+      const userAccounts = await web3Instance.eth.getAccounts();
 
       // Get the contract instance.
-      const networkId = await web3.eth.net.getId();
+      const networkId = await web3Instance.eth.net.getId();
       const deployedNetwork = ApeSurveyContract.networks[networkId];
-      const instance = new web3.eth.Contract(
+      const instance = new web3Instance.eth.Contract(
         ApeSurveyContract.abi,
         deployedNetwork && deployedNetwork.address
       );
 
       // Set web3, accounts, and contract to the state, and then proceed with an
       // example of interacting with the contract's methods.
-      this.setState({ web3, accounts, contract: instance }, this.runExample);
+      setWeb3(web3Instance);
+      setAccounts(userAccounts);
+      setContract(instance);
     } catch (error) {
       // Catch any errors for any of the above operations.
       alert(
@@ -54,6 +55,18 @@ export default function FundSurvey(props) {
       );
       console.error(error);
     }
+  };
+
+  const fundSurveyRewardPool = async () => {
+    // 1. reference your contract instance
+
+    // 2. Call the contract
+    await contract.methods.set(5).send({ from: accounts[0] });
+
+    // 3. Get the value from the contract to prove it worked.
+    const response = await contract.methods.get().call();
+
+    // 4. Update state with the result.
   };
 
   useEffect(() => {
@@ -230,7 +243,9 @@ export default function FundSurvey(props) {
 
         {/* If the user has connected their wallet then show the rest of the form, else show connect wallet button */}
         {web3 && accounts ? (
-          <Button variant="warning">Fund Survey</Button>
+          <Button variant="warning" onClick={fundSurveyRewardPool}>
+            Fund Survey
+          </Button>
         ) : (
           <Button variant="warning" size="lg" onClick={connectWalletHandler}>
             Connect Wallet
