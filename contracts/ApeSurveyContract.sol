@@ -40,7 +40,8 @@ contract ApeSurveyContract is Ownable {
     mapping(address => Reward[]) private rewardMap;
 
     // current metrics
-    uint private currentBalance;
+    uint private currentContractBalance;
+    uint private currentRewardPoolBalance;
     uint private feeBalance;
 
     // cummulative metrics
@@ -52,22 +53,34 @@ contract ApeSurveyContract is Ownable {
 
     event WithdrawlMade(uint256 _amount, uint ts);
 
+    // withdrawFees allows the contract owner to withdraw the service fee balance made.
     function withdrawFees() public onlyOwner {
         require(feeBalance > 0, "Contracts funds are too low to withdraw from.");
         payable(owner()).transfer(feeBalance);
 
         emit WithdrawlMade(feeBalance, block.timestamp);
-    } 
+        feeBalance = 0;
+    }
+
+    // getFeeBalance returns the current balance of service fees accrued.
+    function getFeeBalance() public view onlyOwner returns(uint) {
+        return feeBalance;
+    }
 
     // Getters
-    // get the list of pool ids for a particular user.
+    // get the list of survey pool ids for a particular user.
     function getUserRewardPoolIds(address _user) public view onlyOwner returns (bytes[] memory) {
         return userSurveyIdMap[_user];
     }
 
+    // getRewardPoolIds gets the list of reward pool id's created by the sender.
+    function getRewardPoolIds() public view returns (bytes[] memory) {
+        return userSurveyIdMap[msg.sender];
+    }
+
     // get the reward pool for any user.
-    function getUserRewardPool(address _user, bytes memory _poolId) public view onlyOwner returns(RewardPool memory) {
-        return userRewardPoolMap[_user][_poolId];
+    function getUserRewardPool(address _user, string memory _poolId) public view onlyOwner returns(RewardPool memory) {
+        return userRewardPoolMap[_user][bytes(_poolId)];
     }
 
     // get the rewards for any user.
@@ -75,8 +88,12 @@ contract ApeSurveyContract is Ownable {
         return rewardMap[_user];
     }
 
-    function getCurrentBalance() public view onlyOwner returns(uint) {
-        return currentBalance;
+    function getCurrentContractBalance() public view onlyOwner returns(uint) {
+        return currentContractBalance;
+    }
+
+    function getCurrentRewardPoolBalance() public view onlyOwner returns(uint) {
+        return currentRewardPoolBalance;
     }
 
     function getTotalRewardsPaidOut() public view onlyOwner returns(uint) {
@@ -102,15 +119,16 @@ contract ApeSurveyContract is Ownable {
         address _user,
         bytes _pool,
         uint amount,
-        uint _total
+        uint _newTotal
     );
     event RewardEarned(address _participant, address _creator, bytes _pool);
     event RewardsPaidOut(
-        address _user,
+        address _participant,
         bytes _pool,
-        uint _amount,
-        uint _claims
+        uint _amount
     );
+    event RewardFundsReturned(address _user, bytes _pool, uint _amount);
+    event FeeRevenueEvent(uint _fee, uint ts);
 
     // Functions
 
@@ -152,15 +170,19 @@ contract ApeSurveyContract is Ownable {
         );
 
         userSurveyIdMap[msg.sender].push(title);
-        currentBalance += msg.value;
-        totalRewardPoolFunding += msg.value;
+        currentContractBalance += msg.value;
+        currentRewardPoolBalance += _amount;
+        totalRewardPoolFunding += _amount;
         totalRewardPoolsFunded++;
         feeBalance += _fee;
 
         emit SurveyFunded(msg.sender,surveyId,_amount);
+        emit FeeRevenueEvent(_fee, block.timestamp);
 
     }
 
+    /** getRewardPool allows someone to get a specific reward pool they have created.
+    */
     function getRewardPool(string memory _poolId)
         public
         view
@@ -177,9 +199,10 @@ contract ApeSurveyContract is Ownable {
             address
         )
     {
-        //TODO: assertions
         bytes memory poolId = bytes(_poolId);
         RewardPool memory pool = userRewardPoolMap[msg.sender][poolId];
+        address zeroAddress;
+        require(pool.creator != zeroAddress, "The reward pool does not exist.");
         return (
             string(pool.title),
             pool.totalFunds,
@@ -194,20 +217,65 @@ contract ApeSurveyContract is Ownable {
         );
     }
 
-    // rewardPoolIncrease allows a user to increase the funds allocated to an existing reward pool.
-    function rewardPoolIncrease(uint _amount, string memory _id)
+    // rewardPoolIncrease allows a reward pool creator to increase the funds allocated to an existing reward pool.
+    function rewardPoolIncrease(uint _amount, uint _fee, string memory _id)
         public
         payable
     {
-        //TODO: assertions, implementation, payment
+        require(_amount > 0, "Survey reward pool increase must be more than zero.");
+        require(_fee > 0, "Fee can't be zero.");
+        require(_amount + _fee == msg.value, "Amount paid must equal sum of reward pool funding and service fee.");
+        require(_fee * 20 == _amount, "Fee must equal 5% of the amount paid.");
+
+        RewardPool memory rewardPool = userRewardPoolMap[msg.sender][bytes(_id)];
+        // check that the reward pool exists.
+        address zeroAddress;
+        require(rewardPool.creator != zeroAddress, "The reward pool does not exist.");
+        rewardPool.totalFunds += _amount;
+        userRewardPoolMap[msg.sender][bytes(_id)] = rewardPool;
+        feeBalance += _fee;
+        totalRewardPoolFunding += _amount;
+        currentContractBalance += msg.value;
+        currentRewardPoolBalance += _amount;
+
+        emit RewardPoolIncreased(msg.sender, bytes(_id), _amount, rewardPool.totalFunds);
+        emit FeeRevenueEvent(_fee, block.timestamp);
     }
 
-    function closeRewardPool(string memory _id) public {}
+    // closeRewardPool triggers the event in where all earned funds are sent to the participant addresses,
+    // the unearned balance on the reward pool is returned to the creator, the and reward pool is set as inactive.
+    function closeRewardPool(address payable _user, string memory _id, address[] memory participants) public onlyOwner {
+        address zeroAddress;
+        require(_user != zeroAddress, "Must provide a valid user address.");
+        RewardPool memory pool = userRewardPoolMap[_user][bytes(_id)];
 
-    //
-    function claimReward(address _creator, string memory survey) public {}
+        require(pool.creator != zeroAddress, "The referenced survey reward pool does not exist.");
 
-    function createReward(address _participant, address _creator, string memory _surveyID) private onlyOwner {}
+        uint totalPayout = pool.responseReward * participants.length;
+        uint totalReturn = pool.totalFunds - totalPayout;
+
+        totalRewardsPaidOut += totalPayout;
+        totalResponses += participants.length;
+        currentContractBalance -= pool.totalFunds;
+        currentRewardPoolBalance -= pool.totalFunds;
+
+        // return unearned pool funds to creator
+        payable(_user).transfer(totalReturn);
+
+        // for each address in participants pay them the response reward
+        for(uint i=0; i < participants.length; i++) {
+            address participant = participants[i];
+            payable(participant).transfer(pool.responseReward);
+
+            emit RewardsPaidOut(participant, bytes(_id), pool.responseReward);
+        }
+
+        pool.active = false;
+
+        emit RewardPoolClosed(_user, bytes(_id), participants.length);
+        emit RewardFundsReturned(_user, bytes(_id), totalReturn);
+
+    }
 
     function getRewards() public view returns(Reward[] memory) {
         return rewardMap[msg.sender];
@@ -220,4 +288,5 @@ contract ApeSurveyContract is Ownable {
     receive() external payable {
         require(msg.sender == owner(), "Only the owner can send funds via the fallback function.");
     }
+
 }
