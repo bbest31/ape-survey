@@ -14,3 +14,5 @@ smart contracts written in `./contracts` to the blockchain and generate the
 json artifact files into the client application under `./client/src/contracts`
 which holds all the information regarding the smart contracts that will enable
 the react client to interact with them.
+
+> You can also launch Ganache and then compile and migrate the contract using truffle separately.

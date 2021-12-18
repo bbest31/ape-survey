@@ -1,8 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
+
+// Remix IDE import statements
 import "https://github.com/OpenZeppelin/openzeppelin-contracts/contracts/utils/math/SafeMath.sol";
 import "https://github.com/OpenZeppelin/openzeppelin-contracts/contracts/access/Ownable.sol";
+
+// Standard import statements
 
 contract ApeSurveyContract is Ownable {
     using SafeMath for uint;
@@ -113,21 +117,21 @@ contract ApeSurveyContract is Ownable {
     }
 
     // Events
-    event SurveyFunded(address _user, bytes _pool, uint _amount);
-    event RewardPoolClosed(address _user, bytes _pool, uint _rewarded);
+    event SurveyFunded(address _user, string _poolId, uint _amount);
+    event RewardPoolClosed(address _user, string _poolId, uint _rewarded);
     event RewardPoolIncreased(
         address _user,
-        bytes _pool,
+        string _poolId,
         uint amount,
         uint _newTotal
     );
-    event RewardEarned(address _participant, address _creator, bytes _pool);
+    event RewardEarned(address _participant, address _creator, string _poolId);
     event RewardsPaidOut(
         address _participant,
-        bytes _pool,
+        string _poolId,
         uint _amount
     );
-    event RewardFundsReturned(address _user, bytes _pool, uint _amount);
+    event RewardFundsReturned(address _user, string _poolId, uint _amount);
     event FeeRevenueEvent(uint _fee, uint ts);
 
     // Functions
@@ -144,18 +148,23 @@ contract ApeSurveyContract is Ownable {
         uint _responseReward
     ) public payable {
         bytes memory title = bytes(_title);
-        bytes memory surveyId = bytes(_id);
+        bytes memory poolId = bytes(_id);
         require(_amount > 0, "Reward pool can't be zero.");
         require(_fee > 0, "Fee can't be zero.");
         require(_amount + _fee == msg.value, "Amount paid must equal sum of reward pool funding and service fee.");
         require(_fee * 20 == _amount, "Fee must equal 5% of the reward pool.");
-        require(surveyId.length  != 0, "Survey id can't be blank.");
+        require(poolId.length  != 0, "Survey id can't be blank.");
         require(title.length != 0, "Survey title can't be blank");
         require(_responseReward <= _amount, "Response reward can't be larger than the reward pool.");
         require(_amount % _responseReward == 0, "Reward pool amount must be divisble by the response reward.");
+
+        // reward pool with that id should not already exist.
+        RewardPool memory pool = userRewardPoolMap[msg.sender][poolId];
+        address zeroAddress;
+        require(pool.creator == zeroAddress, "Reward pool with the provided id already exists.");
         
         address[] memory _participants;
-        userRewardPoolMap[msg.sender][surveyId] = RewardPool(
+        userRewardPoolMap[msg.sender][poolId] = RewardPool(
             title,
             _amount,
             0,
@@ -176,7 +185,7 @@ contract ApeSurveyContract is Ownable {
         totalRewardPoolsFunded++;
         feeBalance += _fee;
 
-        emit SurveyFunded(msg.sender,surveyId,_amount);
+        emit SurveyFunded(msg.sender,string(poolId),_amount);
         emit FeeRevenueEvent(_fee, block.timestamp);
 
     }
@@ -218,7 +227,7 @@ contract ApeSurveyContract is Ownable {
     }
 
     // rewardPoolIncrease allows a reward pool creator to increase the funds allocated to an existing reward pool.
-    function rewardPoolIncrease(uint _amount, uint _fee, string memory _id)
+    function rewardPoolIncrease(uint _amount, uint _fee, string memory _poolId)
         public
         payable
     {
@@ -227,29 +236,30 @@ contract ApeSurveyContract is Ownable {
         require(_amount + _fee == msg.value, "Amount paid must equal sum of reward pool funding and service fee.");
         require(_fee * 20 == _amount, "Fee must equal 5% of the amount paid.");
 
-        RewardPool memory rewardPool = userRewardPoolMap[msg.sender][bytes(_id)];
+        RewardPool memory rewardPool = userRewardPoolMap[msg.sender][bytes(_poolId)];
         // check that the reward pool exists.
         address zeroAddress;
         require(rewardPool.creator != zeroAddress, "The reward pool does not exist.");
+        require(rewardPool.active == true, "The reward pool must be active to increase the funds.");
         rewardPool.totalFunds += _amount;
-        userRewardPoolMap[msg.sender][bytes(_id)] = rewardPool;
+        userRewardPoolMap[msg.sender][bytes(_poolId)] = rewardPool;
         feeBalance += _fee;
         totalRewardPoolFunding += _amount;
         currentContractBalance += msg.value;
         currentRewardPoolBalance += _amount;
 
-        emit RewardPoolIncreased(msg.sender, bytes(_id), _amount, rewardPool.totalFunds);
+        emit RewardPoolIncreased(msg.sender, _poolId, _amount, rewardPool.totalFunds);
         emit FeeRevenueEvent(_fee, block.timestamp);
     }
 
     // closeRewardPool triggers the event in where all earned funds are sent to the participant addresses,
     // the unearned balance on the reward pool is returned to the creator, the and reward pool is set as inactive.
-    function closeRewardPool(address payable _user, string memory _id, address[] memory participants) public onlyOwner {
+    function closeRewardPool(address payable _user, string memory _poolId, address[] memory participants) public onlyOwner {
         address zeroAddress;
         require(_user != zeroAddress, "Must provide a valid user address.");
-        RewardPool memory pool = userRewardPoolMap[_user][bytes(_id)];
-
+        RewardPool memory pool = userRewardPoolMap[_user][bytes(_poolId)];
         require(pool.creator != zeroAddress, "The referenced survey reward pool does not exist.");
+        require(pool.active == true || pool.closesAt < block.timestamp, "The referenced survey reward pool is already closed.");
 
         uint totalPayout = pool.responseReward * participants.length;
         uint totalReturn = pool.totalFunds - totalPayout;
@@ -267,13 +277,13 @@ contract ApeSurveyContract is Ownable {
             address participant = participants[i];
             payable(participant).transfer(pool.responseReward);
 
-            emit RewardsPaidOut(participant, bytes(_id), pool.responseReward);
+            emit RewardsPaidOut(participant, _poolId, pool.responseReward);
         }
 
         pool.active = false;
 
-        emit RewardPoolClosed(_user, bytes(_id), participants.length);
-        emit RewardFundsReturned(_user, bytes(_id), totalReturn);
+        emit RewardPoolClosed(_user, _poolId, participants.length);
+        emit RewardFundsReturned(_user, _poolId, totalReturn);
 
     }
 
