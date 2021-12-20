@@ -218,19 +218,19 @@ contract("ApeSurveyContract", (accounts) => {
     );
   });
 
-  it("...should let a participant claim a reward", async () => {
-    const contractInstance = await ApeSurveyContract.deployed();
-    const poolId = "1";
+  // it("...should let a participant claim a reward", async () => {
+  //   const contractInstance = await ApeSurveyContract.deployed();
+  //   const poolId = "1";
 
-    let startBalance = await web3.eth.getBalance(accounts[2]);
+  //   let startBalance = await web3.eth.getBalance(accounts[2]);
 
-    await contractInstance.claimReward(accounts[2], accounts[0], "1");
+  //   await contractInstance.claimReward(accounts[2], accounts[0], "1");
 
-    let endBalance = await web3.eth.getBalance(accounts[2]);
+  //   let endBalance = await web3.eth.getBalance(accounts[2]);
 
-    assert.equal(endBalance, parseInt(startBalance) + 10, "Reward payout is incorrect.");
+  //   assert.equal(endBalance, parseInt(startBalance) + 10, "Reward payout is incorrect.");
 
-    });
+  //   });
 
   it("...should let the reward pool creator close the reward pool.", async () => {
     const contractInstance = await ApeSurveyContract.deployed();
@@ -266,5 +266,4 @@ contract("ApeSurveyContract", (accounts) => {
       "The reward pool active state was incorrect."
     );
   });
-
 });

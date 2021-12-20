@@ -420,40 +420,40 @@ contract ApeSurveyContract is Ownable {
     }
 
     // claimReward 
-    function claimReward(
-        address _participant,
-        address _creator,
-        string memory _poolId
-    ) public onlyOwner {
-        RewardPool memory pool = internalGetRewardPool(_creator, _poolId);
-        address zeroAddress;
-        require(pool.creator != zeroAddress, "Reward pool does not exist.");
-        require(pool.active == true, "The reward pool is closed.");
+    // function claimReward(
+    //     address _participant,
+    //     address _creator,
+    //     string memory _poolId
+    // ) public onlyOwner {
+    //     RewardPool memory pool = internalGetRewardPool(_creator, _poolId);
+    //     address zeroAddress;
+    //     require(pool.creator != zeroAddress, "Reward pool does not exist.");
+    //     require(pool.active == true, "The reward pool is closed.");
 
-        // ensure the participant has not already claimed their reward.
-        bool claimed = participantMap[_creator][bytes(_poolId)].contains(_participant);
-        require(
-            claimed == false,
-            "Participant has already claimed the reward."
-        );
+    //     // ensure the participant has not already claimed their reward.
+    //     bool claimed = participantMap[_creator][bytes(_poolId)].contains(_participant);
+    //     require(
+    //         claimed == false,
+    //         "Participant has already claimed the reward."
+    //     );
 
-        payable(_participant).transfer(pool.responseReward);
+    //     payable(_participant).transfer(pool.responseReward);
 
-        totalRewardsPaidOut += pool.responseReward;
-        totalResponses++;
+    //     totalRewardsPaidOut += pool.responseReward;
+    //     totalResponses++;
 
-        pool.totalRewarded += pool.responseReward;
-        bool replaced = participantMap[_creator][bytes(_poolId)].insert(_participant, _participant);
-        require(replaced == false, "Participant already claimed their reward.");
-        userRewardPoolMap[_creator][bytes(_poolId)] = pool;
+    //     pool.totalRewarded += pool.responseReward;
+    //     bool replaced = participantMap[_creator][bytes(_poolId)].insert(_participant, _participant);
+    //     require(replaced == false, "Participant already claimed their reward.");
+    //     userRewardPoolMap[_creator][bytes(_poolId)] = pool;
 
-        emit RewardPaidOut(
-            _participant,
-            _creator,
-            _poolId,
-            pool.responseReward
-        );
-    }
+    //     emit RewardPaidOut(
+    //         _participant,
+    //         _creator,
+    //         _poolId,
+    //         pool.responseReward
+    //     );
+    // }
 
     fallback() external payable {
         require(
