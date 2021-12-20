@@ -3,7 +3,7 @@ const ApeSurveyContract = artifacts.require("./ApeSurveyContract.sol");
 const Ether = 10 * 18;
 
 contract("ApeSurveyContract", (accounts) => {
-  it("...should create a reward pool.", async () => {
+  it("...should create a reward pool and read that information.", async () => {
     const contractInstance = await ApeSurveyContract.deployed();
 
     // Create a reward pool from non-owner account
@@ -12,6 +12,10 @@ contract("ApeSurveyContract", (accounts) => {
     const amount = 100;
     const fee = 5;
     const responseReward = 10;
+    // events listeners.
+    // let SurveyFundedEventListener = contractInstance.SurveyFunded();
+    // let FeeRevenueEventListener = contractInstance.FeeRevenueEvent();
+
     await contractInstance.createRewardPool(
       poolId,
       poolTitle,
@@ -19,6 +23,74 @@ contract("ApeSurveyContract", (accounts) => {
       fee,
       responseReward,
       { from: accounts[1], value: fee + amount }
+    );
+
+    // ensure events are emitted
+    // let surveyFundedContractLog = await new Promise((resolve, reject) =>
+    //   SurveyFundedEventListener.get((error, log) =>
+    //     error ? reject(error) : resolve(log)
+    //   )
+    // );
+    // assert.equal(
+    //   surveyFundedContractLog.length,
+    //   1,
+    //   "Survey Funded event not emitted"
+    // );
+
+    // let feeRevenueContractLog = await new Promise((resolve, reject) =>
+    //   FeeRevenueEventListener.get((error, log) =>
+    //     error ? reject(error) : resolve(log)
+    //   )
+    // );
+    // assert.equal(
+    //   feeRevenueContractLog.length,
+    //   1,
+    //   "Fee Revenue event not emitted"
+    // );
+
+    // // check event arguements
+    // let surveyFundedEventArgs = surveyFundedContractLog[0].args;
+    // let feeRevenueEventArgs = feeRevenueContractLog[0].args;
+
+    // assert.equal(
+    //   surveyFundedEventArgs._user,
+    //   accounts[1],
+    //   "Survey funded event _user is incorrect."
+    // );
+    // assert.equal(
+    //   surveyFundedEventArgs._poolId,
+    //   poolId,
+    //   "Survey funded event _poolId is incorrect."
+    // );
+    // assert.equal(
+    //   surveyFundedEventArgs._amount,
+    //   amount,
+    //   "Survey funded _amount is incorrect."
+    // );
+
+    // asser.equal(
+    //   feeRevenueEventArgs._fee,
+    //   fee,
+    //   "Fee revenue event _fee is incorrect."
+    // );
+    // let time = await contractInstance.ping_time.call(accounts[1]);
+    // assert.equal(feeRevenueEventArgs.time, time.toNumber(), "ping time");
+
+    const rewardPoolBalance =
+      await contractInstance.getCurrentRewardPoolBalance({ from: accounts[0] });
+
+    assert.equal(
+      rewardPoolBalance.words[0],
+      amount,
+      "The current reward pool balance is incorrect."
+    );
+
+    let contractBalance = await web3.eth.getBalance(contractInstance.address);
+
+    assert.equal(
+      contractBalance,
+      amount + fee,
+      "Contract balance is incorrect."
     );
 
     // Get reward pool via creator method
@@ -34,25 +106,19 @@ contract("ApeSurveyContract", (accounts) => {
     assert.equal(
       result[2].words[0],
       0,
-      "The reward pool total earned was incorrect."
-    );
-    assert.equal(
-      result[3].words[0],
-      0,
       "The reward pool total rewarded was incorrect."
     );
     assert.equal(
-      result[4],
+      result[3],
       true,
       "The reward pool active state was incorrect."
     );
     assert.equal(
-      result[5].words[0],
+      result[4].words[0],
       responseReward,
       "The response reward was incorrect."
     );
-    assert.equal(result[6].words[0], 0, "The response count was incorrect.");
-    assert.equal(result[9], accounts[1], "The creator address was incorrect.");
+    assert.equal(result[7], accounts[1], "The creator address was incorrect.");
 
     // Get reward pool via owner means
     result = await contractInstance.getUserRewardPool(accounts[1], poolId, {
@@ -67,28 +133,22 @@ contract("ApeSurveyContract", (accounts) => {
     assert.equal(
       result[2].words[0],
       0,
-      "The reward pool total earned was incorrect."
-    );
-    assert.equal(
-      result[3].words[0],
-      0,
       "The reward pool total rewarded was incorrect."
     );
     assert.equal(
-      result[4],
+      result[3],
       true,
       "The reward pool active state was incorrect."
     );
     assert.equal(
-      result[5].words[0],
+      result[4].words[0],
       responseReward,
       "The response reward was incorrect."
     );
-    assert.equal(result[6].words[0], 0, "The response count was incorrect.");
-    assert.equal(result[9], accounts[1], "The creator address was incorrect.");
+    assert.equal(result[7], accounts[1], "The creator address was incorrect.");
   });
 
-  it("...should let the owner get the fee balance.", async () => {
+  it("...should let the owner interact with the fee balance.", async () => {
     const contractInstance = await ApeSurveyContract.deployed();
 
     // fee balance carries over from previous unit tests.
@@ -119,23 +179,92 @@ contract("ApeSurveyContract", (accounts) => {
       endingFeeBalance,
       "The ending fee balance is incorrect."
     );
+
+    await contractInstance.withdrawFees({ from: accounts[0] });
+    let newContractBalance = await web3.eth.getBalance(
+      contractInstance.address
+    );
+    const finalFeeBalance = await contractInstance.getFeeBalance({
+      from: accounts[0],
+    });
+
+    assert.equal(newContractBalance, 200, "The contract balance is incorrect.");
+    assert.equal(
+      finalFeeBalance.words[0],
+      0,
+      "The ending fee balance is incorrect."
+    );
   });
 
-  it("...should let the owner get the user reward pool ids.", async () => {});
+  it("...should let the reward pool creator increase the pool funds.", async () => {
+    const contractInstance = await ApeSurveyContract.deployed();
+    const poolId = "1";
+    const amount = 100;
+    const fee = 5;
 
-  it("...should let the owner get a reward pool for any user.", async () => {});
+    await contractInstance.rewardPoolIncrease(amount, fee, poolId, {
+      from: accounts[1],
+      value: 105,
+    });
 
-  it("...should let the owner get the reward for any user.", async () => {});
+    // Get reward pool via creator method
+    let result = await contractInstance.getRewardPool(poolId, {
+      from: accounts[1],
+    });
+    assert.equal(
+      result[1].words[0],
+      200,
+      "The new reward pool fund amount was incorrect."
+    );
+  });
 
-  it("...should let the owner get the current contract balance.", async () => {});
+  it("...should let a participant claim a reward", async () => {
+    const contractInstance = await ApeSurveyContract.deployed();
+    const poolId = "1";
 
-  it("...should let the owner get the current reward pool balance.", async () => {});
+    let startBalance = await web3.eth.getBalance(accounts[2]);
 
-  it("...should let the owner get the total rewards paid out.", async () => {});
+    await contractInstance.claimReward(accounts[2], accounts[0], "1");
 
-  it("...should let the owner get the total reward pool funding.", async () => {});
+    let endBalance = await web3.eth.getBalance(accounts[2]);
 
-  it("...should let the owner get the total number of responses.", async () => {});
+    assert.equal(endBalance, parseInt(startBalance) + 10, "Reward payout is incorrect.");
 
-  it("...should let the owner get the total reward pools funded.", async () => {});
+    });
+
+  it("...should let the reward pool creator close the reward pool.", async () => {
+    const contractInstance = await ApeSurveyContract.deployed();
+    const poolId = "1";
+
+    let creatorBalance = await web3.eth.getBalance(accounts[1]);
+    let participantBalance = await web3.eth.getBalance(accounts[2]);
+    let participants = [accounts[2]];
+
+    await contractInstance.closeRewardPool(accounts[1], poolId, participants);
+
+    let endCreatorBalance = await web3.eth.getBalance(accounts[1]);
+    let endParticipantBalance = await web3.eth.getBalance(accounts[2]);
+
+    assert.equal(
+      endCreatorBalance,
+      parseInt(creatorBalance) + 190,
+      "Creator ending balance is incorrect."
+    );
+    assert.equal(
+      endParticipantBalance,
+      parseInt(participantBalance) + 10,
+      "Participant ending balance is incorrect."
+    );
+
+    // Get reward pool via creator method
+    let result = await contractInstance.getRewardPool(poolId, {
+      from: accounts[1],
+    });
+    assert.equal(
+      result[3],
+      false,
+      "The reward pool active state was incorrect."
+    );
+  });
+
 });

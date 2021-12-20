@@ -9,30 +9,80 @@ pragma solidity ^0.8.0;
 import "@openzeppelin/contracts/utils/math/SafeMath.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
+struct IndexValue { uint keyIndex; address value; }
+struct KeyFlag { address key; bool deleted; }
+
+struct itmap {
+    mapping(address => IndexValue) data;
+    KeyFlag[] keys;
+    uint size;
+}
+
+library IterableMapping {
+    function insert(itmap storage self, address key, address value) internal returns (bool replaced) {
+        uint keyIndex = self.data[key].keyIndex;
+        self.data[key].value = value;
+        if (keyIndex > 0)
+            return true;
+        else {
+            keyIndex = self.keys.length;
+            self.keys.push();
+            self.data[key].keyIndex = keyIndex + 1;
+            self.keys[keyIndex].key = key;
+            self.size++;
+            return false;
+        }
+    }
+
+   function remove(itmap storage self, address key) internal returns (bool success) {
+        uint keyIndex = self.data[key].keyIndex;
+        if (keyIndex == 0)
+            return false;
+        delete self.data[key];
+        self.keys[keyIndex - 1].deleted = true;
+        self.size --;
+    }
+
+    function contains(itmap storage self, address key) internal view returns (bool) {
+        return self.data[key].keyIndex > 0;
+    }
+
+    function iterate_start(itmap storage self) internal view returns (uint keyIndex) {
+        return iterate_next(self, type(uint).max);
+    }
+
+    function iterate_valid(itmap storage self, uint keyIndex) internal view returns (bool) {
+        return keyIndex < self.keys.length;
+    }
+
+    function iterate_next(itmap storage self, uint keyIndex) internal view returns (uint) {
+        keyIndex++;
+        while (keyIndex < self.keys.length && self.keys[keyIndex].deleted)
+            keyIndex++;
+        return keyIndex;
+    }
+
+    function iterate_get(itmap storage self, uint keyIndex) internal view returns (address key, address value) {
+        key = self.keys[keyIndex].key;
+        value = self.data[key].value;
+    }
+}
+
 contract ApeSurveyContract is Ownable {
     using SafeMath for uint256;
-
+    using IterableMapping for itmap;
     constructor() payable {}
 
     // Structs
     struct RewardPool {
         bytes title;
         uint256 totalFunds;
-        uint256 totalEarned;
         uint256 totalRewarded;
         bool active;
         uint256 responseReward;
-        uint256 responses;
-        address[] participants; //people who have earned but not claimed their reward.
         uint256 createdAt;
         uint256 closesAt;
         address creator;
-    }
-
-    struct Reward {
-        address participant;
-        address creator;
-        bytes surveyID;
     }
 
     // State Variables
@@ -40,11 +90,9 @@ contract ApeSurveyContract is Ownable {
     mapping(address => bytes[]) private userSurveyIdMap;
     // userRewardPoolMap maps users to their reward pools keyed by the SM survey id.
     mapping(address => mapping(bytes => RewardPool)) private userRewardPoolMap;
-    // mapping of users to their rewards.
-    mapping(address => Reward[]) private rewardMap;
+    mapping(address => mapping(bytes => itmap)) private participantMap;
 
     // current metrics
-    uint256 private currentContractBalance;
     uint256 private currentRewardPoolBalance;
     uint256 private feeBalance;
 
@@ -54,8 +102,6 @@ contract ApeSurveyContract is Ownable {
     uint256 private totalResponses; // total number of responses.
     uint256 private totalRewardPoolsFunded; // total number of reward pools funded.
 
-    event WithdrawlMade(uint256 _amount, uint256 ts);
-
     // withdrawFees allows the contract owner to withdraw the service fee balance made.
     function withdrawFees() public onlyOwner {
         require(
@@ -64,7 +110,6 @@ contract ApeSurveyContract is Ownable {
         );
         payable(owner()).transfer(feeBalance);
 
-        emit WithdrawlMade(feeBalance, block.timestamp);
         feeBalance = 0;
     }
 
@@ -98,9 +143,7 @@ contract ApeSurveyContract is Ownable {
             string memory,
             uint256,
             uint256,
-            uint256,
             bool,
-            uint256,
             uint256,
             uint256,
             uint256,
@@ -113,34 +156,23 @@ contract ApeSurveyContract is Ownable {
         return (
             string(pool.title),
             pool.totalFunds,
-            pool.totalEarned,
             pool.totalRewarded,
             pool.active,
             pool.responseReward,
-            pool.responses,
             pool.createdAt,
             pool.closesAt,
             pool.creator
         );
     }
 
-    // get the rewards for any user.
-    function getUserRewards(address _user)
-        public
+    function internalGetRewardPool(address _creator, string memory _poolId)
+        private
         view
-        onlyOwner
-        returns (Reward[] memory)
+        returns (RewardPool memory)
     {
-        return rewardMap[_user];
-    }
+        RewardPool memory pool = userRewardPoolMap[_creator][bytes(_poolId)];
 
-    function getCurrentContractBalance()
-        public
-        view
-        onlyOwner
-        returns (uint256)
-    {
-        return currentContractBalance;
+        return pool;
     }
 
     function getCurrentRewardPoolBalance()
@@ -187,8 +219,12 @@ contract ApeSurveyContract is Ownable {
         uint256 amount,
         uint256 _newTotal
     );
-    event RewardEarned(address _participant, address _creator, string _poolId);
-    event RewardsPaidOut(address _participant, string _poolId, uint256 _amount);
+    event RewardPaidOut(
+        address _participant,
+        address _creator,
+        string _poolId,
+        uint256 _amount
+    );
     event RewardFundsReturned(address _user, string _poolId, uint256 _amount);
     event FeeRevenueEvent(uint256 _fee, uint256 ts);
 
@@ -226,30 +262,25 @@ contract ApeSurveyContract is Ownable {
         );
 
         // reward pool with that id should not already exist.
-        RewardPool memory pool = userRewardPoolMap[msg.sender][poolId];
+        RewardPool memory pool = internalGetRewardPool(msg.sender, _id);
         address zeroAddress;
         require(
             pool.creator == zeroAddress,
             "Reward pool with the provided id already exists."
         );
 
-        address[] memory _participants;
         userRewardPoolMap[msg.sender][poolId] = RewardPool(
             title,
             _amount,
             0,
-            0,
             true,
             _responseReward,
-            0,
-            _participants,
             block.timestamp,
             block.timestamp,
             msg.sender
-        );
+        ); 
 
         userSurveyIdMap[msg.sender].push(title);
-        currentContractBalance += msg.value;
         currentRewardPoolBalance += _amount;
         totalRewardPoolFunding += _amount;
         totalRewardPoolsFunded++;
@@ -267,27 +298,22 @@ contract ApeSurveyContract is Ownable {
             string memory,
             uint256,
             uint256,
-            uint256,
             bool,
-            uint256,
             uint256,
             uint256,
             uint256,
             address
         )
     {
-        bytes memory poolId = bytes(_poolId);
-        RewardPool memory pool = userRewardPoolMap[msg.sender][poolId];
+        RewardPool memory pool = internalGetRewardPool(msg.sender, _poolId);
         address zeroAddress;
         require(pool.creator != zeroAddress, "The reward pool does not exist.");
         return (
             string(pool.title),
             pool.totalFunds,
-            pool.totalEarned,
             pool.totalRewarded,
             pool.active,
             pool.responseReward,
-            pool.responses,
             pool.createdAt,
             pool.closesAt,
             pool.creator
@@ -311,9 +337,10 @@ contract ApeSurveyContract is Ownable {
         );
         require(_fee * 20 == _amount, "Fee must equal 5% of the amount paid.");
 
-        RewardPool memory rewardPool = userRewardPoolMap[msg.sender][
-            bytes(_poolId)
-        ];
+        RewardPool memory rewardPool = internalGetRewardPool(
+            msg.sender,
+            _poolId
+        );
         // check that the reward pool exists.
         address zeroAddress;
         require(
@@ -328,7 +355,6 @@ contract ApeSurveyContract is Ownable {
         userRewardPoolMap[msg.sender][bytes(_poolId)] = rewardPool;
         feeBalance += _fee;
         totalRewardPoolFunding += _amount;
-        currentContractBalance += msg.value;
         currentRewardPoolBalance += _amount;
 
         emit RewardPoolIncreased(
@@ -343,13 +369,13 @@ contract ApeSurveyContract is Ownable {
     // closeRewardPool triggers the event in where all earned funds are sent to the participant addresses,
     // the unearned balance on the reward pool is returned to the creator, the and reward pool is set as inactive.
     function closeRewardPool(
-        address payable _user,
+        address payable _creator,
         string memory _poolId,
         address[] memory participants
     ) public onlyOwner {
         address zeroAddress;
-        require(_user != zeroAddress, "Must provide a valid user address.");
-        RewardPool memory pool = userRewardPoolMap[_user][bytes(_poolId)];
+        require(_creator != zeroAddress, "Must provide a valid user address.");
+        RewardPool memory pool = internalGetRewardPool(_creator, _poolId);
         require(
             pool.creator != zeroAddress,
             "The referenced survey reward pool does not exist."
@@ -364,28 +390,69 @@ contract ApeSurveyContract is Ownable {
 
         totalRewardsPaidOut += totalPayout;
         totalResponses += participants.length;
-        currentContractBalance -= pool.totalFunds;
         currentRewardPoolBalance -= pool.totalFunds;
 
         // return unearned pool funds to creator
-        payable(_user).transfer(totalReturn);
-
+        payable(_creator).transfer(totalReturn);
         // for each address in participants pay them the response reward
         for (uint256 i = 0; i < participants.length; i++) {
             address participant = participants[i];
+            bool paid = participantMap[_creator][bytes(_poolId)].contains(participant);
+            require(paid == false, "A participant has already been rewarded.");
             payable(participant).transfer(pool.responseReward);
 
-            emit RewardsPaidOut(participant, _poolId, pool.responseReward);
+            bool replaced = participantMap[_creator][bytes(_poolId)].insert(participant, participant);
+            require(replaced == false, "Participant already claimed their reward.");
+            emit RewardPaidOut(
+                participant,
+                _creator,
+                _poolId,
+                pool.responseReward
+            );
         }
 
         pool.active = false;
+        pool.totalRewarded = totalPayout;
+        userRewardPoolMap[_creator][bytes(_poolId)] = pool;
 
-        emit RewardPoolClosed(_user, _poolId, participants.length);
-        emit RewardFundsReturned(_user, _poolId, totalReturn);
+        emit RewardPoolClosed(_creator, _poolId, participants.length);
+        emit RewardFundsReturned(_creator, _poolId, totalReturn);
     }
 
-    function getRewards() public view returns (Reward[] memory) {
-        return rewardMap[msg.sender];
+    // claimReward 
+    function claimReward(
+        address _participant,
+        address _creator,
+        string memory _poolId
+    ) public onlyOwner {
+        RewardPool memory pool = internalGetRewardPool(_creator, _poolId);
+        address zeroAddress;
+        require(pool.creator != zeroAddress, "Reward pool does not exist.");
+        require(pool.active == true, "The reward pool is closed.");
+
+        // ensure the participant has not already claimed their reward.
+        bool claimed = participantMap[_creator][bytes(_poolId)].contains(_participant);
+        require(
+            claimed == false,
+            "Participant has already claimed the reward."
+        );
+
+        payable(_participant).transfer(pool.responseReward);
+
+        totalRewardsPaidOut += pool.responseReward;
+        totalResponses++;
+
+        pool.totalRewarded += pool.responseReward;
+        bool replaced = participantMap[_creator][bytes(_poolId)].insert(_participant, _participant);
+        require(replaced == false, "Participant already claimed their reward.");
+        userRewardPoolMap[_creator][bytes(_poolId)] = pool;
+
+        emit RewardPaidOut(
+            _participant,
+            _creator,
+            _poolId,
+            pool.responseReward
+        );
     }
 
     fallback() external payable {
