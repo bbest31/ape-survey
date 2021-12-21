@@ -35,7 +35,6 @@ export default function UserSurveys(props) {
               <th>Survey</th>
               <th>Status</th>
               <th>Reward Pool</th>
-              <th>Rewarded</th>
               <th>Responses</th>
               <th>Actions</th>
             </tr>
@@ -46,7 +45,6 @@ export default function UserSurveys(props) {
                 <td>{pool.title}</td>
                 <td>{pool.active ? "Open" : "Closed"}</td>
                 <td>{pool.total_funds}</td>
-                <td>{pool.total_rewarded}</td>
                 <td>{pool.responses}</td>
                 <td>
                   <DropdownButton variant="info" title="More">

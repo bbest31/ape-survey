@@ -15,11 +15,17 @@ import Rewards from "../pages/Rewards/Rewards";
 import Account from "../pages/Account/Account";
 import { SERVER_URL } from "../../api/api";
 import { extractAuth0UserID } from "../../utils/utils";
+import getWeb3 from "../../getWeb3";
+import ApeSurveyContract from "../../contracts/ApeSurveyContract.json";
 
 const Dashboard = () => {
   const [page, setPage] = useState("");
   const [userAccessToken, setUserAccessToken] = useState("");
   const [showSMConnectToast, setShowSMConnectToast] = useState(false);
+  const [accounts, setAccounts] = useState(null);
+  const [web3, setWeb3] = useState(null);
+  const [contract, setContract] = useState(null);
+  const [connected, setConnected] = useState(false);
 
   const { user, logout, getAccessTokenSilently } = useAuth0();
   // const userAccessToken = useAccessToken("read:current_user");
@@ -76,6 +82,38 @@ const Dashboard = () => {
     getToken("read:current_user");
   });
 
+  const connectWalletHandler = async () => {
+    try {
+      console.log("try to connect");
+      // get network provider and web3 instance
+      const web3Instance = await getWeb3();
+      console.log("web3 connect success");
+      // Use web3 to get the user's accounts.
+      const accounts = await web3Instance.eth.getAccounts();
+      console.log("accounts connect success");
+      // Get the contract instance
+      const networkId = await web3Instance.eth.net.getId();
+      const instance = new web3Instance.eth.Contract(
+        ApeSurveyContract.abi,
+        ApeSurveyContract.networks[networkId] &&
+          ApeSurveyContract.networks[networkId].address
+      );
+      console.log("contract connect success");
+      // Set web3, accounts, and contract to the state.
+      setWeb3(web3Instance);
+      setAccounts(accounts);
+      setContract(instance);
+      setConnected(true);
+
+      console.log(accounts);
+    } catch (error) {
+      alert(
+        "Failed to load web3, accounts, or contract. Check console for details"
+      );
+      console.error(error);
+    }
+  };
+
   let content = <h1>Welcome</h1>;
   switch (page) {
     case "surveys":
@@ -104,6 +142,17 @@ const Dashboard = () => {
               <Nav.Link eventKey="account">Account</Nav.Link>
             </Nav>
             <Nav>
+              {connected ? (
+                accounts[0]
+              ) : (
+                <Button
+                  variant="outline-primary"
+                  onClick={connectWalletHandler}
+                >
+                  Connect Wallet
+                </Button>
+              )}
+
               <Button
                 variant="light"
                 onClick={() => logout({ returnTo: window.location.origin })}

@@ -2,6 +2,8 @@ const ApeSurveyContract = artifacts.require("./ApeSurveyContract.sol");
 
 const Ether = 10 * 18;
 
+//TODO: implement use of chai and chai-as-promised to use cleaner testing methods like expect
+
 contract("ApeSurveyContract", (accounts) => {
   it("...should create a reward pool and read that information.", async () => {
     const contractInstance = await ApeSurveyContract.deployed();
