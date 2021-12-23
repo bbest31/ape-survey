@@ -22,9 +22,9 @@ const Dashboard = () => {
   const [page, setPage] = useState("");
   const [userAccessToken, setUserAccessToken] = useState("");
   const [showSMConnectToast, setShowSMConnectToast] = useState(false);
-  const [accounts, setAccounts] = useState(null);
-  const [web3, setWeb3] = useState(null);
-  const [contract, setContract] = useState(null);
+  const [accounts, setAccounts] = useState([]);
+  const [web3, setWeb3] = useState(undefined);
+  const [contract, setContract] = useState([]);
   const [connected, setConnected] = useState(false);
 
   const { user, logout, getAccessTokenSilently } = useAuth0();

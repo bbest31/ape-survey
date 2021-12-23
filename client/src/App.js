@@ -6,6 +6,8 @@ import { Route, Routes, BrowserRouter } from "react-router-dom";
 import "bootstrap/dist/css/bootstrap.min.css";
 import Loading from "./components/pages/Loading/Loading";
 import NotFound from "./components/pages/NotFound/NotFound";
+import drizzle from "./drizzle";
+import { DrizzleContext } from "@drizzle/react-plugin";
 
 function App() {
   const { isLoading, isAuthenticated } = useAuth0();
@@ -20,7 +22,13 @@ function App() {
         <Route
           path="/"
           exact
-          element={isAuthenticated ? <Dashboard /> : <Login />}
+          element={
+            isAuthenticated ? (
+                <Dashboard />
+            ) : (
+              <Login />
+            )
+          }
         />
         <Route
           path="/dashboard"
